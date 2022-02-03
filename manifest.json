@@ -1,0 +1,29 @@
+{
+    "name": "Annoyatron",
+    "description": "Play randomally annoying sounds to troll your co-workers",
+    "version": "1.0",
+    "manifest_version": 3,
+    "background": {
+        "service_worker": "background.js"
+    },
+    "permissions": [
+        "scripting",
+        "tabs"
+    ],
+    "host_permissions": [
+        "http://*/",
+        "https://*/"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": ["sound/*.*"],
+            "matches": ["<all_urls>"]
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "icons": {
+        "512": "/img/icon.png"
+    }
+  }

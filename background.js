@@ -34,7 +34,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
 
     switch (message['message_type']) {
         case PongMessageType:
-            // console.log('pong from: ', message['tab_id']);
+            // console.log('pong from: ', message['tab_id'], message['url']);
             ResponsiveTabIDs.push(message['tab_id'])
             if (SendAnnoyingSoundID) {
                 clearTimeout(SendAnnoyingSoundID);
@@ -111,36 +111,43 @@ playSound = function(soundToPlay, timesToPlay, sessionID, failedToPlayMessageTyp
 }
 
 pingTab = function(tab, sessionID) {
-    chrome.scripting.executeScript(
+    executeScript = chrome.scripting.executeScript(
         {
             target: { tabId: tab.id},
             function: (tabID, sessionID, messageType) => {
                 var audio = document.createElement('audio');
-                audio.src = '';
+                // 0.1 seconds of total silence just to make sure the tab is responsive and can play sounds
+                audio.src="data:audio/mpeg;base64, SUQzBAAAAAAANFRDT04AAAAHAAADQmx1ZXMAVFNTRQAAAA8AAANMYXZmNTkuMTAuMTAwAAAAAAAAAAAAAAD/+1QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABJbmZvAAAADwAAAAcAAANgAFVVVVVVVVVVVVVVVVVVcXFxcXFxcXFxcXFxcXGOjo6Ojo6Ojo6Ojo6OjqqqqqqqqqqqqqqqqqqqqsfHx8fHx8fHx8fHx8fH4+Pj4+Pj4+Pj4+Pj4+P//////////////////wAAAABMYXZjNTkuMTQAAAAAAAAAAAAAAAAkAvEAAAAAAAADYB251ar/+xRkAA/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRkHg/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRkPA/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRkWg/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRkeA/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRklg/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xRktA/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
                 audio.autoplay = true;
                 promise = audio.play();
-                
-                promise.catch(error => {
+
+                promise.then(_ => {
                     chrome.runtime.sendMessage(
                         chrome.runtime.id,
                         {
                             "message_type": messageType,
                             "tab_id": tabID,
+                            // "url": window.location.href,
                             "session_id": sessionID,
                         },
                     )
-                });
+                })
             },
             args: [tab.id, sessionID, PongMessageType],
         }
     );
+    executeScript.catch(_ => {sendAnnoyingSoundToRandomResponsiveTab(sessionID);});
+}
+
+retryScheduleAnnoyingSound = function() {
+    clearTimeout(MainTriggerID);
+    scheduleAnnoyingSound(1);
 }
 
 sendAnnoyingSoundToRandomResponsiveTab = function(sessionID) {
     if (ResponsiveTabIDs.length == 0) {
         // console.log("no available tab left. will try again in one minute.");
-        clearTimeout(MainTriggerID);
-        scheduleAnnoyingSound(1);
+        retryScheduleAnnoyingSound();
         return;
     }
 
@@ -150,37 +157,50 @@ sendAnnoyingSoundToRandomResponsiveTab = function(sessionID) {
     ResponsiveTabIDs.splice(index, 1);
 
     const soundToPlay = soundsList[getRandomInt(0, soundsList.length - 1)]
-    const timesToPlay = getRandomInt(1, 3)
+    const timesToPlay = getRandomInt(1, 2)
     // console.log("It is time to annoy! playing sound ", soundToPlay, timesToPlay, " times on tab: ", tabID);
 
-    chrome.scripting.executeScript(
+    executeScript = chrome.scripting.executeScript(
         {
             target: { tabId: tabID},
             function: playSound,
             args: [soundToPlay, timesToPlay, sessionID, FailedToPlaySoundMessageType],
         }
     );
+
+    executeScript.catch(_ => {});
 }
 
 canTabPlaySound = function(tab) {
     return tab.id && tab.url && tab.url.startsWith('http');
 }
 
-scheduleAnnoyingSound = function(timeoutInMinutes) {
+getNextScheduleTime = function() {
+    return getRandomInt(5, 120);
+}
+
+scheduleAnnoyingSound = function(timeoutInMinutes = getNextScheduleTime()) {
     // console.log("next annoying sounds at " + new Date((new Date()).getTime() + timeoutInMinutes * 60 * 1000));
     MainTriggerID = setTimeout(
         async () => {
-            scheduleAnnoyingSound(getRandomInt(20, 60));
+            scheduleAnnoyingSound();
 
             SessionID = getRandomInt(0, 1000000);
             ResponsiveTabIDs = []
             chrome.tabs.query(
                 {},
                 function(tabs) {
+                    var pingWasSent = false;
                     for (const tab of tabs) {
                         if (canTabPlaySound(tab)) {
+                            pingWasSent = true;
                             pingTab(tab, SessionID);
                         }
+                    }
+
+                    if (!pingWasSent) {
+                        // console.log("didn't find any available tab to play sound. retrying.")
+                        retryScheduleAnnoyingSound();
                     }
                 },
             )
@@ -189,4 +209,4 @@ scheduleAnnoyingSound = function(timeoutInMinutes) {
     )
 }
 
-scheduleAnnoyingSound(getRandomInt(20, 60));
+scheduleAnnoyingSound();

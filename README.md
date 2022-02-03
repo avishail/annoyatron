@@ -2,7 +2,7 @@
 
 Troll your family, friends and co-workers with annoying sounds that will be randomally played on the browser.
 
-## What Annoyatron?
+## What is Annoyatron?
 
 It is a chrome extension that plays annyoing sounds randomally on the browser. Each time a different tab will be selected to play the annyoing sound.
 

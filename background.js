@@ -19,8 +19,17 @@ const FailedToPlaySoundMessageType = 1;
 
 var SessionID = 0;
 var ResponsiveTabIDs = [];
-var SendAnnoyingSoundID;
-var MainTriggerID;
+
+chrome.alarms.onAlarm.addListener(
+    (alarm) => {
+        if (alarm.name !== 'annoyatron-response-from-tab') {
+            return;
+        }
+
+        SessionID++;
+        sendAnnoyingSoundToRandomResponsiveTab(SessionID);
+    },
+)
 
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     if (sender.id !== chrome.runtime.id) {
@@ -36,16 +45,8 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         case PongMessageType:
             // console.log('pong from: ', message['tab_id'], message['url']);
             ResponsiveTabIDs.push(message['tab_id'])
-            if (SendAnnoyingSoundID) {
-                clearTimeout(SendAnnoyingSoundID);
-            }
-            SendAnnoyingSoundID = setTimeout(
-                () => {
-                    SessionID++;
-                    sendAnnoyingSoundToRandomResponsiveTab(SessionID)
-                },
-                2 * 1000,
-            );
+            chrome.alarms.clear('annoyatron-response-from-tab');
+            chrome.alarms.create('annoyatron-response-from-tab', { when: Date.now() + 2 * 1000 });
             break;
         case FailedToPlaySoundMessageType:
             // console.log('failed to play sound. Trying another tab');
@@ -60,20 +61,12 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-playSound = function(soundToPlay, timesToPlay, sessionID, failedToPlayMessageType) {
+playSound = function(soundToPlay, sessionID, failedToPlayMessageType) {
     var audio = document.createElement('audio');
     // console.log("Playing:", soundToPlay)
     audio.src = chrome.runtime.getURL('sound/' + soundToPlay);
     audio.autoplay = true;
     promise = audio.play();
-
-    timesToPlay--;
-
-    getRandomInt = (min, max) => {
-        min = Math.ceil(min);
-        max = Math.floor(max);
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
 
     reportError = () => {
         // console.log("failed to play sound, will try other tab")
@@ -92,18 +85,7 @@ playSound = function(soundToPlay, timesToPlay, sessionID, failedToPlayMessageTyp
     }
 
     promise.then(_ => {
-        // console.log("sound was played succesfully")
-        var totalSeconds = 0;
-        for(var i = 0 ; i < timesToPlay ; ++i) {
-            totalSeconds += getRandomInt(60, 180);
-            setTimeout(
-                () => {
-                    // console.log("playing sound ", soundToPlay);
-                    audio.play();
-                },
-                totalSeconds * 1000,
-            )
-        }
+        // console.log("sound was played succesfully");
     }).catch(error => {
         reportError();
     });
@@ -136,18 +118,17 @@ pingTab = function(tab, sessionID) {
             args: [tab.id, sessionID, PongMessageType],
         }
     );
-    executeScript.catch(_ => {sendAnnoyingSoundToRandomResponsiveTab(sessionID);});
-}
-
-retryScheduleAnnoyingSound = function() {
-    clearTimeout(MainTriggerID);
-    scheduleAnnoyingSound(1);
+    executeScript.catch(_ => {
+        // we failed to execute the ping script on a tab
+        chrome.alarms.clear('annoyatron-response-from-tab');
+        chrome.alarms.create('annoyatron-response-from-tab', { when: Date.now() + 2 * 1000 });
+    });
 }
 
 sendAnnoyingSoundToRandomResponsiveTab = function(sessionID) {
     if (ResponsiveTabIDs.length == 0) {
         // console.log("no available tab left. will try again in one minute.");
-        retryScheduleAnnoyingSound();
+        scheduleAnnoyingSound(1);
         return;
     }
 
@@ -157,14 +138,13 @@ sendAnnoyingSoundToRandomResponsiveTab = function(sessionID) {
     ResponsiveTabIDs.splice(index, 1);
 
     const soundToPlay = soundsList[getRandomInt(0, soundsList.length - 1)]
-    const timesToPlay = getRandomInt(1, 2)
-    // console.log("It is time to annoy! playing sound ", soundToPlay, timesToPlay, " times on tab: ", tabID);
+    // console.log("It is time to annoy! playing sound ", soundToPlay," on tab: ", tabID);
 
     executeScript = chrome.scripting.executeScript(
         {
             target: { tabId: tabID},
             function: playSound,
-            args: [soundToPlay, timesToPlay, sessionID, FailedToPlaySoundMessageType],
+            args: [soundToPlay, sessionID, FailedToPlaySoundMessageType],
         }
     );
 
@@ -176,37 +156,41 @@ canTabPlaySound = function(tab) {
 }
 
 getNextScheduleTime = function() {
-    return getRandomInt(5, 120);
+    return getRandomInt(20, 40);
 }
 
 scheduleAnnoyingSound = function(timeoutInMinutes = getNextScheduleTime()) {
     // console.log("next annoying sounds at " + new Date((new Date()).getTime() + timeoutInMinutes * 60 * 1000));
-    MainTriggerID = setTimeout(
-        async () => {
-            scheduleAnnoyingSound();
-
-            SessionID = getRandomInt(0, 1000000);
-            ResponsiveTabIDs = []
-            chrome.tabs.query(
-                {},
-                function(tabs) {
-                    var pingWasSent = false;
-                    for (const tab of tabs) {
-                        if (canTabPlaySound(tab)) {
-                            pingWasSent = true;
-                            pingTab(tab, SessionID);
-                        }
-                    }
-
-                    if (!pingWasSent) {
-                        // console.log("didn't find any available tab to play sound. retrying.")
-                        retryScheduleAnnoyingSound();
-                    }
-                },
-            )
-        },
-        timeoutInMinutes * 60 * 1000,
-    )
+    chrome.alarms.clear('annoyatron-main');
+    chrome.alarms.create('annoyatron-main', { delayInMinutes: timeoutInMinutes });
 }
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== 'annoyatron-main') {
+        return;
+    }
+
+    scheduleAnnoyingSound();
+
+    SessionID = getRandomInt(0, 1000000);
+    ResponsiveTabIDs = []
+    chrome.tabs.query(
+        {},
+        function(tabs) {
+            var pingWasSent = false;
+            for (const tab of tabs) {
+                if (canTabPlaySound(tab)) {
+                    pingWasSent = true;
+                    pingTab(tab, SessionID);
+                }
+            }
+
+            if (!pingWasSent) {
+                // console.log("didn't find any available tab to play sound. retrying.")
+                scheduleAnnoyingSound(1);
+            }
+        },
+    )
+});
 
 scheduleAnnoyingSound();

@@ -8,6 +8,10 @@ It is a chrome extension that plays annyoing sounds randomally on the browser. E
 
 ## How to install?
 
+If you want to install it on your friend's Chrome, you can get it from the store: https://chrome.google.com/webstore/detail/annoyatron/aidikdpegckihbiaoiipjaamonflhnlb/
+
+If you want to play with the code yourslef:
+
 1. Clone the repo
 2. On chrome, go to chrome://extensions/
 3. On the top right side, turn on `Developer mode`
